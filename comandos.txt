@@ -1,0 +1,140 @@
+primero miramos la dirección de nuestro usb 
+
+	sudo fdisk -l
+
+	/dev/sdb
+
+Vamos a crear 5 particiones 
+
+	1 grub fat32 1gb 
+	1 conjunto de particiones 
+	    |_____ 1 iso ubuntu ext4 10 gb 
+	    |_____ 1 iso kali ext4 10 gb| /dev/sdb6
+	    |_____ 1 persistencia ubuntu ext4 140gb 
+	    |_____ 1 persistencia kali ext4 140gb 
+
+Estas particiones las vamos a crear con gparted debido a que no se hacer un conjunto desde la terminal y este ofrece una UI
+
+	sudo gparted
+
+Una vez abierto creamos las particiones, en mi caso para un ssd de medio tera he usado la siguiente config 
+
+	1 grub fat32 1gb | /dev/sdb1
+	1 conjunto de particiones | /dev/sdb2
+	    |_____ 1 iso ubuntu ext4 10 gb | /dev/sdb5
+	    |_____ 1 iso kali ext4 10 gb | /dev/sdb6
+	    |_____ 1 persistencia ubuntu ext4 140gb | /dev/sdb7
+	    |_____ 1 persistencia kali ext4 140gb | /dev/sdb8
+
+una vez creadas las particiones y con las iso descargadas, vamos a crear carpetas donde montaremos las imágenes para luego hacer una copia de todos los archivos de la iso a la carpeta del ssd donde queramos almacenarla
+para luego arrancar el sistema, de esta manera no formateamos la partición con el formato iso y seguiremos teniendo permisos de escritura sobre esta. 
+
+
+INSTALAR UBUNTU EN EL DISCO DURO 
+
+	# creamos la carpeta donde montaremos la iso y la montamos
+
+		sudo mkdir /mnt/ubuntu 
+		sudo mount -o loop ~/Descargas/ubuntu.iso /mnt/ubuntu
+
+	# Identifica la partición de Ubuntu
+
+		sudo mkdir /mnt/usbubuntu
+		sudo mount /dev/sdb5 /mnt/usbubuntu
+
+	# Copiar los archivos de la ISO a la partición de Ubuntu
+
+		sudo rsync -a /mnt/ubuntu/ /mnt/usbubuntu
+
+	# Configurar persistencia para Ubuntu
+
+		sudo mkfs.ext4 -L casper-rw /dev/sdb7
+		sudo mkdir /mnt/ubuntupersist
+		sudo mount /dev/sdb7 /mnt/ubuntupersist
+
+	# Ahora crea el archivo de persistencia:
+
+		sudo mkdir -p /mnt/ubuntupersist/casper-rw
+
+INSTALAR KALI EN EL DISCO DURO 
+
+	# Monta la ISO de Kali Linux
+
+		sudo mkdir /mnt/kali
+		sudo mount -o loop ~/Descargas/kali-linux.iso /mnt/kali
+
+	# Identifica la partición de Kali
+
+		sudo mkdir /mnt/usbkali
+		sudo mount /dev/sdb6 /mnt/usbkali
+
+	# Copia los archivos de la ISO a la partición de Kali:
+
+		sudo rsync -a /mnt/kali/ /mnt/usbkali
+
+	#  Configurar persistencia para Kali
+
+		sudo mkfs.ext4 -L persistence /dev/sdb8
+		sudo mkdir /mnt/kalipersist
+		sudo mount /dev/sdb8 /mnt/kalipersist
+
+	# Crea el archivo de persistencia y su configuración:	
+
+		echo "/ union" | sudo tee /mnt/kalipersist/persistence.conf
+
+Instalar GRUB en la partición FAT32
+
+	# Monta la partición FAT32 que usaremos para GRUB:
+
+		sudo mkdir /mnt/fat32
+		sudo mount /dev/sdb1 /mnt/fat32
+
+	# Instala GRUB en el MBR del disco (no en una partición) y coloca sus archivos en la partición FAT32
+
+		#arranque para pc que usan BIOS
+	
+			sudo grub-install --target=i386-pc --boot-directory=/mnt/fat32/boot /dev/sdb  
+		
+		#arranque para pc que usan UEFI 
+			
+			sudo grub-install --target=x86_64-efi --efi-directory=/mnt/fat32 --boot-directory=/mnt/fat32/boot /dev/sdb 
+
+
+	# Edita el archivo de configuración de GRUB:
+
+		sudo nano /mnt/fat32/boot/grub/grub.cfg
+
+		menuentry "Ubuntu Live with Persistence" {
+		    set root='(hd0,5)'  # Ubuntu está en la primera partición lógica
+    		    linux /casper/vmlinuz boot=casper persistent
+    		    initrd /casper/initrd
+		}
+
+		menuentry "Kali Linux Live with Persistence" {
+    		    set root='(hd0,6)'  # Kali está en otra partición lógica
+    		    linux /live/vmlinuz boot=live persistence
+    		    initrd /live/initrd.img
+		}
+
+FIN 
+
+	Si has realizado todos los pasos correctamente, puedes desmontar todas las particiones y reiniciar para poder acceder a tu SO
+
+POSIBLES FALLOS
+
+	# Comprobamos que la partición del GRUB esta marcada como booteable, para esto primero desmontamos el disco duro para poder realizar cambios si es necesario (deberemos desmontar todo el disco y sus particiones)
+
+		sudo umount /dev/sdb*
+
+		sudo fdisk /dev/sdb 
+
+		# Luego, dentro de fdisk, usa la opción a para marcar la partición FAT32 como "bootable" y guarda los cambios.
+
+			a
+			1
+			w
+
+
+
+
+
